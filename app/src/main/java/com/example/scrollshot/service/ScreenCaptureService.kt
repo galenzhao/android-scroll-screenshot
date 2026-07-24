@@ -17,6 +17,7 @@ import com.galenzhao.scrollshot.CaptureRepository
 import com.galenzhao.scrollshot.MainActivity
 import com.galenzhao.scrollshot.R
 import com.galenzhao.scrollshot.capture.FrameCaptureManager
+import com.galenzhao.scrollshot.capture.StopOverlayController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,6 +32,8 @@ class ScreenCaptureService : Service() {
         const val EXTRA_RESULT_DATA = "extra_result_data"
         /** 顶部裁剪高度（px）。<0 表示使用系统状态栏高度；>=0 表示使用该值（可含状态栏+浮动按钮等） */
         const val EXTRA_TOP_CROP_HEIGHT_PX = "extra_top_crop_height_px"
+        /** 底部裁剪高度（px）。<=0 表示不裁剪；用于目标 App 自带的、不随内容滚动的底部 Tab 栏等 */
+        const val EXTRA_BOTTOM_CROP_HEIGHT_PX = "extra_bottom_crop_height_px"
         const val ACTION_STOP = "action_stop"
         const val ACTION_BEGIN = "action_begin_capture"
         // 延迟开始捕获，给系统动画/通知栏收起留足时间
@@ -44,8 +47,12 @@ class ScreenCaptureService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var captureManager: FrameCaptureManager? = null
     private var hasStartedCapture: Boolean = false
+    /** 截图过程中常驻的悬浮"停止"按钮，避免必须下拉通知栏才能停止（见类注释） */
+    private val stopOverlay by lazy { StopOverlayController(this) }
     /** 用户指定的顶部裁剪高度（px），-1 表示未指定、使用系统状态栏 */
     private var topCropHeightPx: Int = -1
+    /** 用户指定的底部裁剪高度（px），<=0 表示不裁剪 */
+    private var bottomCropHeightPx: Int = -1
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     private val projectionCallback = object : MediaProjection.Callback() {
@@ -92,6 +99,7 @@ class ScreenCaptureService : Service() {
         @Suppress("DEPRECATION")
         val resultData: Intent? = intent?.getParcelableExtra(EXTRA_RESULT_DATA)
         topCropHeightPx = intent?.getIntExtra(EXTRA_TOP_CROP_HEIGHT_PX, -1) ?: -1
+        bottomCropHeightPx = intent?.getIntExtra(EXTRA_BOTTOM_CROP_HEIGHT_PX, -1) ?: -1
 
         // 这里不再校验 resultCode 是否等于 -1，
         // 因为 Activity.RESULT_OK 本身就是 -1，直接允许通过，只要 data 不为 null 即可
@@ -170,6 +178,7 @@ class ScreenCaptureService : Service() {
 
     private fun cleanup() {
         Log.d(TAG, "cleanup()")
+        stopOverlay.hide()
         captureManager?.release()
         captureManager = null
         hasStartedCapture = false
@@ -199,7 +208,8 @@ class ScreenCaptureService : Service() {
         captureManager = FrameCaptureManager(
             this,
             projection,
-            topCropHeightPx = if (topCropHeightPx >= 0) topCropHeightPx else null
+            topCropHeightPx = if (topCropHeightPx >= 0) topCropHeightPx else null,
+            bottomCropHeightPx = if (bottomCropHeightPx > 0) bottomCropHeightPx else null
         )
         Log.d(TAG, "FrameCaptureManager created in beginCapture(), calling start()")
         captureManager!!.start()
@@ -212,6 +222,9 @@ class ScreenCaptureService : Service() {
         // 更新通知文案为“正在运行”
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, buildNotification())
+
+        // 悬浮停止按钮：未授予「显示在其他应用上层」权限时会静默跳过，不影响通知栏停止方式
+        stopOverlay.show { processAndStop() }
     }
 
     private fun createNotificationChannel() {

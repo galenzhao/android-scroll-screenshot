@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.galenzhao.scrollshot"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         // 自动根据当前时间生成版本号
@@ -26,7 +26,7 @@ android {
             ((now.toEpochSecond(ZoneOffset.UTC) - base.toEpochSecond(ZoneOffset.UTC)) / 60).toInt()
         applicationId = "com.galenzhao.scrollshot"
         minSdk = 30
-        targetSdk = 35
+        targetSdk = 36
         versionCode = minutesSinceBase
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

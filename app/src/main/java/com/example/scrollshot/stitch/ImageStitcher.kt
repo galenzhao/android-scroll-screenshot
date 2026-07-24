@@ -7,11 +7,12 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * 图像拼接器：按「整帧重叠覆盖」的方式生成长截图。
+ * 图像拼接器：按「新增底部条带追加」的方式生成长截图。
  *
  * - 第一帧整帧作为长图顶部。
- * - 后续每一帧存整帧，通过 deltaY 计算在长图中的纵向偏移 topY；
- *   整帧画在 topY，重叠区域由新帧覆盖上一帧底部（含底部 bar），不覆盖长图更上方。
+ * - 后续每一帧只截取本次滚动新出现的底部条带（高度 = deltaY），追加到长图末尾。
+ *   这样每一帧自身顶部的内容（哪怕是应用自己的吸顶头部、返回键/菜单栏等不随内容滚动的元素）
+ *   只会在它所属的那一帧里出现一次，不会像「整帧覆盖」那样在每个拼接点被反复画一遍。
  * - 可通过 [debugSaveSlicesTo] 将每个切片保存到指定目录，供应用内「查看切片」界面使用。
  */
 class ImageStitcher(
@@ -20,52 +21,61 @@ class ImageStitcher(
 ) {
 
     companion object {
-        private const val MAX_TOTAL_HEIGHT = 16000 // 单张最大高度（px）
+        // 单张最大高度（px）。现在按“新增条带追加”而非整帧存储，内存占用已大幅降低，
+        // 故可以放到比较宽松的上限；主要是为了避免单张 Bitmap 大到在个别设备上分配失败。
+        private const val MAX_TOTAL_HEIGHT = 30000
     }
 
-    private val frames = mutableListOf<Bitmap>()
-    private val deltas = mutableListOf<Int>() // deltas[i] = 第 i+1 帧相对第 i 帧的 deltaY
-    private var totalScroll = 0
+    private var firstFrame: Bitmap? = null
+    /** 每一条追加的新内容条带（本次滚动新出现的底部区域），按顺序拼在第一帧下方 */
+    private val strips = mutableListOf<Bitmap>()
+    private var totalHeight = 0
 
-    /** 若设置，buildResult 时会把每个切片（整帧）保存到此目录，供应用内查看：slice_001.png, slice_002.png, ... result.png */
+    /** 是否已经达到长图最大高度上限，之后追加的帧会被丢弃；供调用方提示用户及时停止 */
+    val isAtMaxHeight: Boolean
+        get() = totalHeight >= MAX_TOTAL_HEIGHT
+
+    /** 若设置，buildResult 时会把每个切片保存到此目录，供应用内查看：slice_001.png, slice_002.png, ... result.png */
     var debugSaveSlicesTo: File? = null
 
     fun addFirstFrame(bitmap: Bitmap) {
-        val copy = bitmap.copy(Bitmap.Config.ARGB_8888, false)
-        frames.add(copy)
-        totalScroll = 0
+        firstFrame?.recycle()
+        firstFrame = bitmap.copy(Bitmap.Config.ARGB_8888, false)
+        totalHeight = frameHeight
     }
 
     /**
-     * 添加新的一帧（整帧）。
+     * 添加新的一帧。
      * @param currBitmap 当前帧（整帧）
      * @param deltaY 本帧与上一帧之间内容上移的像素数（重合高度）。
      */
     fun addFrame(currBitmap: Bitmap, deltaY: Int): Boolean {
-        if (frames.isEmpty()) {
+        if (firstFrame == null) {
             addFirstFrame(currBitmap)
             return true
         }
         if (deltaY <= 0) return false
 
         val clampedDelta = deltaY.coerceAtMost(frameHeight)
-        val resultHeight = frameHeight + totalScroll + clampedDelta
+        val resultHeight = totalHeight + clampedDelta
         if (resultHeight > MAX_TOTAL_HEIGHT) return false
 
-        val copy = currBitmap.copy(Bitmap.Config.ARGB_8888, false)
-        frames.add(copy)
-        deltas.add(clampedDelta)
-        totalScroll += clampedDelta
+        // 只截取本帧“新出现”的底部条带，而不是保存整帧，
+        // 既避免了吸顶元素被重复画入长图，也大幅减少了内存占用（不用一直持有所有整帧）。
+        val stripTop = frameHeight - clampedDelta
+        val strip = Bitmap.createBitmap(currBitmap, 0, stripTop, frameWidth, clampedDelta)
+        strips.add(strip)
+        totalHeight += clampedDelta
         return true
     }
 
     /**
-     * 按重合位置覆盖合成：第一帧画在顶部，后续每帧画在 topY，覆盖上一帧底部。
+     * 依次画出第一帧，再把每条新增条带追加到末尾。
      */
     fun buildResult(): Bitmap? {
-        if (frames.isEmpty()) return null
+        val first = firstFrame ?: return null
 
-        val resultHeight = (frameHeight + totalScroll).coerceAtMost(MAX_TOTAL_HEIGHT)
+        val resultHeight = totalHeight.coerceAtMost(MAX_TOTAL_HEIGHT)
         val result = Bitmap.createBitmap(frameWidth, resultHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(result)
 
@@ -73,33 +83,33 @@ class ImageStitcher(
         if (debugDir != null) debugDir.mkdirs()
 
         // 第一帧整帧画在顶部
-        canvas.drawBitmap(frames[0], 0f, 0f, null)
-        if (debugDir != null) saveBitmap(frames[0], File(debugDir, "slice_001.png"))
+        canvas.drawBitmap(first, 0f, 0f, null)
+        if (debugDir != null) saveBitmap(first, File(debugDir, "slice_001.png"))
 
-        var topY = 0
-        for (i in 1 until frames.size) {
-            topY += deltas[i - 1]
-            if (topY >= resultHeight) break
+        var y = frameHeight
+        for ((index, strip) in strips.withIndex()) {
+            if (y >= resultHeight) break
 
-            val frame = frames[i]
-            val drawHeight = (frame.height.coerceAtMost(frameHeight)).coerceAtMost(resultHeight - topY)
+            val drawHeight = strip.height.coerceAtMost(resultHeight - y)
             if (drawHeight <= 0) continue
 
             canvas.drawBitmap(
-                frame,
+                strip,
                 Rect(0, 0, frameWidth, drawHeight),
-                Rect(0, topY, frameWidth, topY + drawHeight),
+                Rect(0, y, frameWidth, y + drawHeight),
                 null
             )
-            if (debugDir != null) saveBitmap(frame, File(debugDir, "slice_%03d.png".format(i + 1)))
+            if (debugDir != null) saveBitmap(strip, File(debugDir, "slice_%03d.png".format(index + 2)))
+            y += drawHeight
         }
 
         if (debugDir != null) saveBitmap(result, File(debugDir, "result.png"))
 
-        frames.forEach { it.recycle() }
-        frames.clear()
-        deltas.clear()
-        totalScroll = 0
+        first.recycle()
+        strips.forEach { it.recycle() }
+        strips.clear()
+        totalHeight = 0
+        firstFrame = null
 
         return result
     }
@@ -111,9 +121,10 @@ class ImageStitcher(
     }
 
     fun release() {
-        frames.forEach { it.recycle() }
-        frames.clear()
-        deltas.clear()
-        totalScroll = 0
+        firstFrame?.recycle()
+        firstFrame = null
+        strips.forEach { it.recycle() }
+        strips.clear()
+        totalHeight = 0
     }
 }

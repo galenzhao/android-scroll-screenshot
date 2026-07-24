@@ -6,7 +6,11 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.galenzhao.scrollshot.databinding.ActivitySliceViewerBinding
@@ -29,9 +33,11 @@ class SliceViewerActivity : AppCompatActivity() {
     private lateinit var binding: ActivitySliceViewerBinding
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         binding = ActivitySliceViewerBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        applyWindowInsets()
 
         setSupportActionBar(binding.toolbar)
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
@@ -61,6 +67,16 @@ class SliceViewerActivity : AppCompatActivity() {
         binding.tvEmpty.visibility = View.GONE
         binding.recycler.layoutManager = LinearLayoutManager(this)
         binding.recycler.adapter = SliceAdapter(files)
+    }
+
+    private fun applyWindowInsets() {
+        val recyclerPadBottom = binding.recycler.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, windowInsets ->
+            val insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+            binding.toolbar.updatePadding(top = insets.top)
+            binding.recycler.updatePadding(bottom = recyclerPadBottom + insets.bottom)
+            windowInsets
+        }
     }
 
     override fun onSupportNavigateUp(): Boolean {

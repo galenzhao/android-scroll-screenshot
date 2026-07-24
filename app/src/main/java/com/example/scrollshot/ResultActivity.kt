@@ -6,7 +6,11 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.MediaStore
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.galenzhao.scrollshot.databinding.ActivityResultBinding
 import kotlinx.coroutines.Dispatchers
@@ -20,9 +24,11 @@ class ResultActivity : AppCompatActivity() {
     private var resultBitmap: Bitmap? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         binding = ActivityResultBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        applyWindowInsets()
 
         resultBitmap = CaptureRepository.resultBitmap
         if (resultBitmap == null) {
@@ -50,6 +56,17 @@ class ResultActivity : AppCompatActivity() {
         binding.btnViewSlices.setOnClickListener {
             startActivity(Intent(this, SliceViewerActivity::class.java)
                 .putExtra(SliceViewerActivity.EXTRA_DEBUG_DIR, CaptureRepository.lastDebugDir))
+        }
+    }
+
+    private fun applyWindowInsets() {
+        val topPad = binding.topBar.paddingTop
+        val bottomPad = binding.bottomBar.paddingBottom
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, windowInsets ->
+            val insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+            binding.topBar.updatePadding(top = topPad + insets.top)
+            binding.bottomBar.updatePadding(bottom = bottomPad + insets.bottom)
+            windowInsets
         }
     }
 

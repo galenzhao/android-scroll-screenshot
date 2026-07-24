@@ -10,10 +10,8 @@
         android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:paddingTop="52dp"
-        android:paddingHorizontal="16dp"
-        android:paddingBottom="12dp"
         android:background="@color/card_bg"
+        android:minHeight="?attr/actionBarSize"
         app:title="@string/slice_viewer_title"
         app:titleTextColor="@color/text_primary"
         app:layout_constraintTop_toTopOf="parent" />

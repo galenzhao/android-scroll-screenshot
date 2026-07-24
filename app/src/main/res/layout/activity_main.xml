@@ -12,7 +12,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingTop="56dp"
+        android:paddingTop="24dp"
         android:paddingHorizontal="24dp"
         android:paddingBottom="24dp"
         app:layout_constraintTop_toTopOf="parent"
@@ -88,6 +88,27 @@
                 android:layout_height="wrap_content"
                 android:inputType="numberSigned"
                 android:hint="@string/hint_top_crop_height"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary"
+                android:textSize="14sp"
+                android:minHeight="48dp"
+                android:paddingHorizontal="12dp"
+                android:background="@drawable/bg_input_dark"
+                android:layout_marginTop="4dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/label_bottom_crop_height"
+                android:textSize="12sp"
+                android:textColor="@color/text_secondary"
+                android:layout_marginTop="16dp" />
+            <EditText
+                android:id="@+id/etBottomCropHeight"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="numberSigned"
+                android:hint="@string/hint_bottom_crop_height"
                 android:textColor="@color/text_primary"
                 android:textColorHint="@color/text_secondary"
                 android:textSize="14sp"

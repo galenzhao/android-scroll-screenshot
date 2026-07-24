@@ -8,12 +8,18 @@
     <string name="status_hint_switch_and_scroll">Switch to the target app and scroll slowly</string>
     <string name="status_capturing">● Capturing</string>
     <string name="status_capturing_count">Recorded %1$d scroll segments</string>
+    <string name="status_capturing_reached_limit">Recorded %1$d scroll segments — max length reached, tap Stop now</string>
     <string name="status_processing">Stitching images…</string>
     <string name="status_processing_hint">Please wait</string>
     <string name="status_error">Error</string>
 
+    <string name="toast_reached_max_height">Reached the maximum screenshot length. Further scrolling won\'t be captured — tap Stop to finish.</string>
+
     <string name="label_top_crop_height">Top crop height (px)</string>
     <string name="hint_top_crop_height">Leave empty = status bar only, or enter total height (including floating buttons)</string>
+
+    <string name="label_bottom_crop_height">Bottom crop height (px)</string>
+    <string name="hint_bottom_crop_height">Leave empty = no crop; set if the app has a fixed bottom tab bar</string>
 
     <string name="usage_title">How to use</string>
     <string name="usage_steps">
@@ -29,6 +35,7 @@
     <!-- Toasts & messages -->
     <string name="toast_screen_permission_denied">Screen capture permission was denied</string>
     <string name="toast_notification_required">Notification permission is required to run the foreground service</string>
+    <string name="toast_overlay_permission_hint">Optional: allow "display over other apps" to get a floating Stop button, so you don\'t need to pull down the notification shade to stop capturing</string>
     <string name="toast_no_result">No screenshot result available</string>
     <string name="toast_saved_ok">Saved to gallery ✓</string>
     <string name="toast_saved_fail">Save failed</string>

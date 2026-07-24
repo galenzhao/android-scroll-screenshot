@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 可选权限：用于截图过程中显示悬浮"停止"按钮，避免必须下拉通知栏才能停止 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:allowBackup="true"
@@ -11,6 +13,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:largeHeap="true"
         android:theme="@style/Theme.ScrollShot">
 
         <activity
@@ -28,8 +31,7 @@
 
         <activity
             android:name=".SliceViewerActivity"
-            android:exported="false"
-            android:title="@string/slice_viewer_title" />
+            android:exported="false" />
 
         <service
             android:name=".service.ScreenCaptureService"

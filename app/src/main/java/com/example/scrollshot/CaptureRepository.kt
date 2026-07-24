@@ -12,7 +12,8 @@ object CaptureRepository {
 
     sealed class State {
         object Idle : State()
-        data class Capturing(val frameCount: Int = 0) : State()
+        /** [reachedLimit] 为 true 表示长图已达最大高度上限，之后的滚动内容不会再被记录，应尽快停止 */
+        data class Capturing(val frameCount: Int = 0, val reachedLimit: Boolean = false) : State()
         object Processing : State()
         data class Completed(val result: Bitmap) : State()
         data class Error(val message: String) : State()

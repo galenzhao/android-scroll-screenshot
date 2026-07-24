@@ -5,12 +5,20 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.isVisible
+import androidx.core.view.updateLayoutParams
+import androidx.core.view.updatePadding
 import androidx.lifecycle.lifecycleScope
 import com.galenzhao.scrollshot.databinding.ActivityMainBinding
 import com.galenzhao.scrollshot.service.ScreenCaptureService
@@ -20,9 +28,13 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var mediaProjectionManager: MediaProjectionManager
+    /** 避免"已达最大长度"提示在每次状态刷新时重复弹出 */
+    private var maxHeightWarningShown = false
 
     companion object {
         private const val TAG = "MainActivity"
+        private const val PREFS_NAME = "scrollshot_prefs"
+        private const val PREF_OVERLAY_ASKED = "overlay_permission_asked"
     }
 
     private val screenCaptureLauncher = registerForActivityResult(
@@ -44,11 +56,24 @@ class MainActivity : AppCompatActivity() {
         else Toast.makeText(this, getString(R.string.toast_notification_required), Toast.LENGTH_LONG).show()
     }
 
+    /**
+     * 悬浮"停止"按钮权限（可选）：只在从未问过时主动引导一次，不管用户最终是否授权，
+     * 都会继续走后续流程——授权与否不影响核心截图功能，只是有没有悬浮停止按钮的区别。
+     */
+    private val overlayPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        Log.d(TAG, "overlayPermissionLauncher returned, canDrawOverlays=${Settings.canDrawOverlays(this)}")
+        checkNotificationPermissionAndStart()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         Log.d(TAG, "onCreate()")
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        applyWindowInsets()
 
         mediaProjectionManager = getSystemService(MediaProjectionManager::class.java)
 
@@ -56,6 +81,24 @@ class MainActivity : AppCompatActivity() {
         binding.btnStopCapture.setOnClickListener { stopCaptureService() }
 
         observeState()
+    }
+
+    private fun applyWindowInsets() {
+        val headerPadTop = binding.headerLayout.paddingTop
+        val buttonBottomMargin =
+            (binding.btnStartCapture.layoutParams as ConstraintLayout.LayoutParams).bottomMargin
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, windowInsets ->
+            val insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+            binding.headerLayout.updatePadding(top = headerPadTop + insets.top)
+            val bottomMargin = buttonBottomMargin + insets.bottom
+            binding.btnStartCapture.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                this.bottomMargin = bottomMargin
+            }
+            binding.btnStopCapture.updateLayoutParams<ConstraintLayout.LayoutParams> {
+                this.bottomMargin = bottomMargin
+            }
+            windowInsets
+        }
     }
 
     override fun onResume() {
@@ -82,13 +125,22 @@ class MainActivity : AppCompatActivity() {
                 binding.progressBar.isVisible = false
                 binding.tvStatus.text = getString(R.string.status_ready)
                 binding.tvFrameCount.text = getString(R.string.status_hint_switch_and_scroll)
+                maxHeightWarningShown = false
             }
             is CaptureRepository.State.Capturing -> {
                 binding.btnStartCapture.isVisible = false
                 binding.btnStopCapture.isVisible = true
                 binding.progressBar.isVisible = false
                 binding.tvStatus.text = getString(R.string.status_capturing)
-                binding.tvFrameCount.text = getString(R.string.status_capturing_count, state.frameCount)
+                if (state.reachedLimit) {
+                    binding.tvFrameCount.text = getString(R.string.status_capturing_reached_limit, state.frameCount)
+                    if (!maxHeightWarningShown) {
+                        maxHeightWarningShown = true
+                        Toast.makeText(this, getString(R.string.toast_reached_max_height), Toast.LENGTH_LONG).show()
+                    }
+                } else {
+                    binding.tvFrameCount.text = getString(R.string.status_capturing_count, state.frameCount)
+                }
             }
             is CaptureRepository.State.Processing -> {
                 binding.btnStartCapture.isVisible = false
@@ -113,6 +165,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun checkPermissionAndStart() {
         Log.d(TAG, "checkPermissionAndStart()")
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val overlayAlreadyAsked = prefs.getBoolean(PREF_OVERLAY_ASKED, false)
+        if (!Settings.canDrawOverlays(this) && !overlayAlreadyAsked) {
+            // 只主动引导一次：悬浮停止按钮是可选功能，不想每次开始截图都打断用户
+            prefs.edit().putBoolean(PREF_OVERLAY_ASKED, true).apply()
+            Log.d(TAG, "Overlay permission not granted, requesting once (optional, for floating stop button)")
+            Toast.makeText(this, getString(R.string.toast_overlay_permission_hint), Toast.LENGTH_LONG).show()
+            overlayPermissionLauncher.launch(
+                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+            )
+        } else {
+            checkNotificationPermissionAndStart()
+        }
+    }
+
+    private fun checkNotificationPermissionAndStart() {
         if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             Log.d(TAG, "POST_NOTIFICATIONS not granted, requesting")
             notificationPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -131,13 +199,16 @@ class MainActivity : AppCompatActivity() {
         Log.d(TAG, "startCaptureService() resultCode=$resultCode data=$data")
         val topCropStr = binding.etTopCropHeight.text?.toString()?.trim()
         val topCropPx = topCropStr?.toIntOrNull()
+        val bottomCropStr = binding.etBottomCropHeight.text?.toString()?.trim()
+        val bottomCropPx = bottomCropStr?.toIntOrNull()
 
         val intent = Intent(this, ScreenCaptureService::class.java).apply {
             putExtra(ScreenCaptureService.EXTRA_RESULT_CODE, resultCode)
             putExtra(ScreenCaptureService.EXTRA_RESULT_DATA, data)
             putExtra(ScreenCaptureService.EXTRA_TOP_CROP_HEIGHT_PX, topCropPx ?: -1)
+            putExtra(ScreenCaptureService.EXTRA_BOTTOM_CROP_HEIGHT_PX, bottomCropPx ?: -1)
         }
-        Log.d(TAG, "Calling startForegroundService() with intent=$intent topCropPx=$topCropPx")
+        Log.d(TAG, "Calling startForegroundService() with intent=$intent topCropPx=$topCropPx bottomCropPx=$bottomCropPx")
         startForegroundService(intent)
     }
 
